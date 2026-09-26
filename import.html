@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Import Data</title>
+  <style>
+    :root{--bg:#0E0E10;--panel:#18181B;--panel-2:#1F1F23;--line:#2A2A2E;--text:#F4F4F5;--text-dim:#9A9AA2;--tiktok-cyan:#25F4EE;--tiktok-pink:#FE2C55;}
+    *{box-sizing:border-box;}
+    body{background:var(--bg);color:var(--text);font-family:'Inter',-apple-system,sans-serif;margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;}
+    .card{background:var(--panel);border:1px solid var(--line);border-radius:20px;padding:24px;max-width:480px;width:100%;}
+    h1{font-size:20px;font-weight:900;margin:0 0 6px;background:linear-gradient(90deg,var(--tiktok-cyan),var(--tiktok-pink));-webkit-background-clip:text;background-clip:text;color:transparent;}
+    p{font-size:13px;color:var(--text-dim);margin:0 0 20px;line-height:1.6;}
+    label{display:block;font-size:11px;color:var(--text-dim);margin-bottom:6px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;}
+    textarea{width:100%;background:var(--panel-2);border:1px solid var(--line);border-radius:10px;padding:12px;color:var(--text);font-size:12px;font-family:monospace;resize:vertical;min-height:120px;margin-bottom:14px;}
+    textarea:focus{outline:2px solid var(--tiktok-cyan);outline-offset:1px;}
+    button{width:100%;background:linear-gradient(90deg,var(--tiktok-pink),#EE4D2D);color:#fff;border:none;border-radius:12px;padding:14px;font-size:14px;font-weight:800;cursor:pointer;}
+    .toast{margin-top:14px;padding:10px 14px;border-radius:10px;font-size:13px;font-weight:700;display:none;}
+    .toast.ok{background:rgba(61,220,151,.15);color:#3DDC97;display:block;}
+    .toast.err{background:rgba(254,44,85,.15);color:var(--tiktok-pink);display:block;}
+    .note{font-size:11px;color:var(--text-dim);margin-top:12px;text-align:center;}
+  </style>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
+</head>
+<body>
+<div class="card">
+  <h1>📦 Import Data</h1>
+  <p>Paste the exported data from your old Claude scheduler link below, then click Import. This will restore all your streams, merchants and must-do brands.</p>
+  <label>Paste exported data here</label>
+  <textarea id="importBox" placeholder='{"streams":[...],"merchants":[...],"brands":[]}'></textarea>
+  <button onclick="doImport()">Import & restore data</button>
+  <div class="toast" id="toast"></div>
+  <p class="note">After importing, go back to your main scheduler link to see your data.</p>
+</div>
+
+<script>
+  // ── PASTE YOUR FIREBASE CONFIG HERE (same as in your index.html) ──
+  const firebaseConfig = {
+    apiKey: "AIzaSyAKDhMQK1wgGpzDRV8K6H_v4z60TvrU2i8",
+    authDomain: "livestream-scheduler-543ec.firebaseapp.com",
+    databaseURL: "https://livestream-scheduler-543ec-default-rtdb.asia-southeast1.firebasedatabase.app",
+    projectId: "livestream-scheduler-543ec",
+    storageBucket: "livestream-scheduler-543ec.firebasestorage.app",
+    messagingSenderId: "802783738762",
+    appId: "1:802783738762:web:60d00029896133f0572673"
+  };
+
+  firebase.initializeApp(firebaseConfig);
+  const db = firebase.database();
+
+  function showToast(msg, ok){
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.className = 'toast ' + (ok ? 'ok' : 'err');
+  }
+
+  async function doImport(){
+    const raw = document.getElementById('importBox').value.trim();
+    if(!raw){ showToast('Please paste your exported data first', false); return; }
+    try{
+      const parsed = JSON.parse(raw);
+      if(!Array.isArray(parsed.streams) || !Array.isArray(parsed.merchants)){
+        showToast('Invalid data — make sure you copied the full export', false); return;
+      }
+      await db.ref('scheduler').set({
+        streams: JSON.stringify(parsed.streams),
+        merchants: JSON.stringify(parsed.merchants),
+        brands: JSON.stringify(Array.isArray(parsed.brands) ? parsed.brands : [])
+      });
+      showToast('✅ Data imported successfully! Go back to your scheduler to see it.', true);
+    } catch(e){
+      showToast('Error: ' + e.message, false);
+    }
+  }
+</script>
+</body>
+</html>
