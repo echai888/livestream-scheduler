@@ -1,0 +1,736 @@
+<!--
+=======================================================
+  LIVESTREAM SCHEDULER — Firebase Edition
+  Setup steps (one time only):
+  -------------------------------------------------------
+  1. Go to https://console.firebase.google.com
+  2. Click "Add project" → give it a name → Create project
+  3. Click the </> (Web) icon → Register app → copy the firebaseConfig object
+  4. Paste your config values into the FIREBASE CONFIG section below
+  5. In the Firebase console: Build → Realtime Database → Create database
+     → choose your region → Start in TEST MODE → Enable
+  6. In Realtime Database → Rules tab, paste this and Publish:
+     {
+       "rules": {
+         ".read": true,
+         ".write": true
+       }
+     }
+  7. Upload this file as index.html to GitHub Pages or Netlify → done!
+=======================================================
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Livestream Schedule</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📅</text></svg>">
+
+  <!-- Firebase SDKs -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
+
+  <style>
+    :root{
+      --bg:#0E0E10;--panel:#18181B;--panel-2:#1F1F23;--line:#2A2A2E;
+      --text:#F4F4F5;--text-dim:#9A9AA2;
+      --tiktok-cyan:#25F4EE;--tiktok-pink:#FE2C55;--shopee:#EE4D2D;--ok:#3DDC97;
+    }
+    *{box-sizing:border-box;}
+    body,#app-root{background:var(--bg);color:var(--text);font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;margin:0;min-height:100vh;}
+    .display{font-family:'Archivo Black','Inter',sans-serif;}
+    .wrap{max-width:520px;margin:0 auto;padding:20px 16px 100px;}
+
+    /* Setup screen */
+    .setup-screen{max-width:480px;margin:40px auto;padding:24px 20px;}
+    .setup-screen h1{font-size:22px;font-weight:900;margin:0 0 6px;background:linear-gradient(90deg,var(--tiktok-cyan),var(--tiktok-pink));-webkit-background-clip:text;background-clip:text;color:transparent;}
+    .setup-screen .sub{color:var(--text-dim);font-size:14px;margin-bottom:24px;}
+    .setup-step{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px 16px;margin-bottom:10px;display:flex;gap:12px;align-items:flex-start;}
+    .step-num{width:26px;height:26px;border-radius:50%;background:var(--tiktok-pink);color:#fff;font-size:12px;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px;}
+    .step-body h3{font-size:13px;font-weight:700;margin:0 0 3px;}
+    .step-body p{font-size:12px;color:var(--text-dim);margin:0;line-height:1.5;}
+    .step-body a{color:var(--tiktok-cyan);text-decoration:none;}
+    .step-body code{background:var(--panel-2);padding:1px 5px;border-radius:4px;font-size:11px;color:var(--text);}
+
+    /* Topbar */
+    .topbar{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:18px;gap:10px;}
+    .brand .eyebrow{font-size:11px;letter-spacing:.14em;color:var(--text-dim);text-transform:uppercase;}
+    .brand h1{font-size:22px;margin:2px 0 0;font-weight:900;letter-spacing:-.02em;background:linear-gradient(90deg,var(--tiktok-cyan),var(--tiktok-pink));-webkit-background-clip:text;background-clip:text;color:transparent;}
+    .topbar-right{display:flex;align-items:center;gap:6px;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end;}
+    .icon-top-btn{background:var(--panel);border:1px solid var(--line);border-radius:999px;color:var(--text-dim);font-size:11px;font-weight:700;padding:7px 11px;cursor:pointer;white-space:nowrap;}
+    .sync-badge{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text-dim);}
+    .sync-dot{width:6px;height:6px;border-radius:50%;background:var(--ok);}
+    .sync-dot.red{background:var(--tiktok-pink);}
+
+    /* Live banner */
+    .live-banner{display:none;align-items:center;gap:10px;background:linear-gradient(90deg,rgba(254,44,85,.15),rgba(37,244,238,.1));border:1px solid var(--tiktok-pink);border-radius:14px;padding:10px 14px;margin-bottom:16px;}
+    .live-banner.show{display:flex;}
+    .live-dot{width:9px;height:9px;border-radius:50%;background:var(--tiktok-pink);animation:pulse 1.2s infinite;flex-shrink:0;}
+    @keyframes pulse{0%,100%{opacity:1;transform:scale(1);}50%{opacity:.4;transform:scale(.8);}}
+    .live-banner b{font-weight:800;}
+
+    /* Stats */
+    .stats-row{display:flex;gap:10px;margin-bottom:6px;}
+    .stat-card{flex:1;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px 14px;}
+    .stat-card .num{font-size:22px;font-weight:900;line-height:1;}
+    .stat-card .lbl{font-size:11px;color:var(--text-dim);margin-top:4px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;}
+    .stat-card.tiktok .num{color:var(--tiktok-cyan);}
+    .stat-card.shopee .num{color:var(--shopee);}
+
+    /* Monthly breakdown */
+    .monthly-toggle{width:100%;background:transparent;border:none;color:var(--text-dim);font-size:12px;font-weight:700;padding:10px 2px 14px;text-align:left;cursor:pointer;}
+    .monthly-panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:6px 14px;margin-bottom:18px;}
+    .month-row{display:flex;align-items:center;justify-content:space-between;padding:11px 0;border-bottom:1px solid var(--line);gap:10px;flex-wrap:wrap;}
+    .month-row:last-child{border-bottom:none;}
+    .month-label{font-size:13px;font-weight:700;}
+    .month-counts{display:flex;gap:6px;align-items:center;flex-wrap:wrap;}
+    .mc-pill{font-size:10.5px;font-weight:700;padding:3px 8px;border-radius:999px;}
+    .mc-pill.tiktok{background:rgba(37,244,238,.15);color:var(--tiktok-cyan);}
+    .mc-pill.shopee{background:rgba(238,77,45,.15);color:var(--shopee);}
+    .mc-total{font-size:10.5px;color:var(--text-dim);font-weight:700;}
+
+    /* View toggle */
+    .view-toggle{display:flex;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:3px;margin-bottom:14px;width:fit-content;}
+    .view-toggle button{border:none;background:transparent;color:var(--text-dim);font-size:12px;font-weight:700;padding:7px 14px;border-radius:8px;cursor:pointer;}
+    .view-toggle button.active{background:var(--panel-2);color:var(--text);border:1px solid var(--line);}
+
+    /* Strip */
+    .daystrip{display:flex;gap:8px;overflow-x:auto;padding-bottom:6px;margin-bottom:18px;-webkit-overflow-scrolling:touch;scrollbar-width:thin;scrollbar-color:var(--line) transparent;cursor:grab;user-select:none;}
+    .daystrip.dragging{cursor:grabbing;}
+    .daystrip::-webkit-scrollbar{height:4px;}
+    .daystrip::-webkit-scrollbar-thumb{background:var(--line);border-radius:2px;}
+    .day-chip{flex:0 0 auto;width:52px;padding:8px 0;border-radius:14px;background:var(--panel);border:1px solid var(--line);text-align:center;cursor:pointer;}
+    .day-chip .dow{font-size:10px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.06em;}
+    .day-chip .num{font-size:16px;font-weight:800;margin-top:2px;}
+    .day-chip .dot{width:4px;height:4px;border-radius:50%;background:var(--tiktok-cyan);margin:4px auto 0;visibility:hidden;}
+    .day-chip.has-event .dot{visibility:visible;}
+    .day-chip.active{background:var(--text);border-color:var(--text);}
+    .day-chip.active .dow,.day-chip.active .num{color:#000;}
+    .day-chip.active .dot{background:#000;}
+    .day-chip.today:not(.active){border-color:var(--tiktok-pink);}
+
+    /* Calendar */
+    .cal-nav{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;}
+    .cal-nav-title{font-size:16px;font-weight:800;}
+    .cal-nav-btn{background:var(--panel);border:1px solid var(--line);border-radius:8px;color:var(--text);width:34px;height:34px;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;}
+    .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:3px;margin-bottom:18px;}
+    .cal-dow{text-align:center;font-size:10px;font-weight:700;color:var(--text-dim);text-transform:uppercase;padding:4px 0 6px;letter-spacing:.04em;}
+    .cal-cell{min-height:72px;border-radius:8px;display:flex;flex-direction:column;align-items:stretch;cursor:pointer;background:var(--panel);border:1px solid transparent;padding:4px 3px;overflow:hidden;}
+    .cal-cell:hover{background:var(--panel-2);}
+    .cal-cell.other-month{opacity:.2;pointer-events:none;}
+    .cal-cell.today{border-color:var(--tiktok-pink);}
+    .cal-cell.active{background:var(--panel-2);border-color:var(--text);}
+    .cal-num-wrap{display:flex;justify-content:center;margin-bottom:3px;}
+    .cal-num{font-size:12px;font-weight:700;width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;}
+    .cal-cell.today .cal-num{background:var(--tiktok-pink);color:#fff;}
+    .cal-cell.active:not(.today) .cal-num{background:var(--text);color:#000;}
+    .cal-event{font-size:9px;font-weight:700;padding:2px 4px;border-radius:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:1px;line-height:1.4;}
+    .cal-event.tiktok{background:rgba(37,244,238,.2);color:var(--tiktok-cyan);}
+    .cal-event.shopee{background:rgba(238,77,45,.2);color:#FF8A70;}
+    .cal-more{font-size:8px;color:var(--text-dim);font-weight:700;padding:1px 4px;}
+
+    /* Cards */
+    .section-label{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--text-dim);margin:0 0 10px;font-weight:700;}
+    .card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:14px;margin-bottom:10px;display:flex;gap:12px;}
+    .card.platform-tiktok{border-left:3px solid var(--tiktok-cyan);}
+    .card.platform-shopee{border-left:3px solid var(--shopee);}
+    .card.is-cancelled{opacity:.5;}
+    .time-col{flex:0 0 56px;}
+    .time-col .t{font-size:14px;font-weight:800;}
+    .time-col .ampm{font-size:10px;color:var(--text-dim);}
+    .card-body{flex:1;min-width:0;}
+    .card-top{display:flex;align-items:center;gap:6px;margin-bottom:4px;flex-wrap:wrap;}
+    .plat-badge{font-size:9px;font-weight:800;padding:2px 7px;border-radius:999px;letter-spacing:.04em;}
+    .plat-badge.tiktok{background:rgba(37,244,238,.15);color:var(--tiktok-cyan);}
+    .plat-badge.shopee{background:rgba(238,77,45,.15);color:var(--shopee);}
+    .merchant-badge{font-size:9px;font-weight:700;padding:2px 7px;border-radius:999px;background:rgba(255,255,255,.08);color:var(--text-dim);}
+    .card-title{font-size:14.5px;font-weight:700;margin:0;line-height:1.3;}
+    .card-meta{font-size:12px;color:var(--text-dim);margin-top:3px;}
+    .status-pill{font-size:10px;font-weight:700;padding:3px 8px;border-radius:999px;}
+    .status-scheduled{background:var(--panel-2);color:var(--text-dim);}
+    .status-live{background:rgba(254,44,85,.18);color:var(--tiktok-pink);}
+    .status-done{background:rgba(61,220,151,.15);color:var(--ok);}
+    .status-cancelled{background:rgba(154,154,162,.15);color:var(--text-dim);text-decoration:line-through;}
+    .card-actions{display:flex;flex-direction:column;gap:6px;}
+    .icon-btn{width:28px;height:28px;border-radius:8px;border:1px solid var(--line);background:var(--panel-2);color:var(--text-dim);font-size:13px;display:flex;align-items:center;justify-content:center;cursor:pointer;}
+
+    /* Report */
+    .report-month{background:var(--panel);border:1px solid var(--line);border-radius:16px;margin-bottom:12px;overflow:hidden;}
+    .report-month-header{display:flex;align-items:center;justify-content:space-between;padding:13px 16px;border-bottom:1px solid var(--line);}
+    .report-month-title{font-size:15px;font-weight:800;}
+    .report-month-total{font-size:12px;color:var(--text-dim);font-weight:700;}
+    .report-platform{border-bottom:1px solid var(--line);}
+    .report-platform:last-child{border-bottom:none;}
+    .report-plat-header{display:flex;align-items:center;justify-content:space-between;padding:10px 16px;}
+    .report-plat-count{font-size:12px;color:var(--text-dim);font-weight:700;}
+    .report-streams{padding:0 16px 10px;}
+    .report-stream-item{display:flex;align-items:center;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--line);gap:8px;}
+    .report-stream-item:last-child{border-bottom:none;}
+    .report-stream-left{display:flex;flex-direction:column;gap:2px;min-width:0;}
+    .report-stream-name{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .report-stream-meta{font-size:11px;color:var(--text-dim);}
+    .report-stream-date{font-size:11px;color:var(--text-dim);flex-shrink:0;}
+    .report-empty{text-align:center;padding:30px;color:var(--text-dim);font-size:13px;}
+
+    .empty{text-align:center;padding:36px 10px;color:var(--text-dim);font-size:13px;}
+    .empty .big{font-size:30px;margin-bottom:8px;}
+
+    .fab{position:fixed;bottom:env(safe-area-inset-bottom,22px);bottom:calc(22px + env(safe-area-inset-bottom,0px));left:50%;transform:translateX(-50%);width:min(488px,calc(100% - 32px));background:linear-gradient(90deg,var(--tiktok-pink),var(--shopee));color:#fff;border:none;border-radius:16px;padding:14px;font-size:14px;font-weight:800;cursor:pointer;box-shadow:0 10px 30px rgba(254,44,85,.25);z-index:10;}
+    .fab:active{transform:translateX(-50%) scale(.98);}
+
+    /* Sheets */
+    .overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:flex-end;z-index:50;}
+    .overlay.show{display:flex;}
+    .sheet{background:var(--panel);width:100%;max-width:520px;margin:0 auto;border-radius:20px 20px 0 0;padding:18px 18px 28px;max-height:88vh;overflow-y:auto;}
+    .sheet-handle{width:36px;height:4px;background:var(--line);border-radius:2px;margin:0 auto 14px;}
+    .sheet h2{font-size:17px;font-weight:800;margin:0 0 16px;}
+    .field{margin-bottom:14px;}
+    .field label{display:block;font-size:11px;color:var(--text-dim);margin-bottom:6px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;}
+    .field input,.field select,.field textarea{width:100%;background:var(--panel-2);border:1px solid var(--line);border-radius:10px;padding:11px 12px;color:var(--text);font-size:14px;font-family:inherit;appearance:none;}
+    .field textarea{resize:vertical;min-height:54px;}
+    .field input:focus,.field select:focus,.field textarea:focus{outline:2px solid var(--tiktok-cyan);outline-offset:1px;}
+    .row2{display:flex;gap:10px;}
+    .row2 .field{flex:1;}
+    .plat-toggle,.status-toggle{display:flex;gap:8px;flex-wrap:wrap;}
+    .plat-toggle button{flex:1;padding:10px;border-radius:10px;border:1px solid var(--line);background:var(--panel-2);color:var(--text-dim);font-weight:700;font-size:13px;cursor:pointer;}
+    .plat-toggle button.sel-tiktok{border-color:var(--tiktok-cyan);color:var(--tiktok-cyan);background:rgba(37,244,238,.1);}
+    .plat-toggle button.sel-shopee{border-color:var(--shopee);color:var(--shopee);background:rgba(238,77,45,.1);}
+    .status-toggle button{flex:1;min-width:70px;padding:9px 6px;border-radius:10px;border:1px solid var(--line);background:var(--panel-2);color:var(--text-dim);font-weight:700;font-size:11px;cursor:pointer;}
+    .status-toggle button.sel{border-color:var(--text);color:var(--text);background:var(--panel);}
+    .sheet-actions{display:flex;gap:10px;margin-top:18px;}
+    .btn-primary{flex:1;background:var(--text);color:#000;border:none;border-radius:12px;padding:13px;font-weight:800;font-size:14px;cursor:pointer;}
+    .btn-ghost{background:transparent;color:var(--text-dim);border:1px solid var(--line);border-radius:12px;padding:13px 16px;font-weight:700;font-size:14px;cursor:pointer;}
+    .btn-delete{background:transparent;color:var(--tiktok-pink);border:1px solid rgba(254,44,85,.3);border-radius:12px;padding:13px 16px;font-weight:700;font-size:13px;cursor:pointer;width:100%;}
+    .list-wrap{display:flex;flex-direction:column;gap:8px;margin-bottom:14px;}
+    .list-item{display:flex;align-items:center;justify-content:space-between;background:var(--panel-2);border:1px solid var(--line);border-radius:10px;padding:11px 14px;}
+    .list-item-left{display:flex;align-items:center;gap:8px;}
+    .list-item span{font-size:14px;font-weight:600;}
+    .list-item button{background:transparent;border:none;color:var(--tiktok-pink);font-size:18px;cursor:pointer;padding:0 4px;}
+    .no-items{font-size:13px;color:var(--text-dim);text-align:center;padding:16px 0;}
+    .add-row{display:flex;gap:8px;}
+    .add-row input{flex:1;background:var(--panel-2);border:1px solid var(--line);border-radius:10px;padding:11px 12px;color:var(--text);font-size:14px;font-family:inherit;}
+    .add-row input:focus{outline:2px solid var(--tiktok-cyan);outline-offset:1px;}
+    .add-row button{background:var(--tiktok-cyan);color:#000;border:none;border-radius:10px;padding:11px 16px;font-weight:800;font-size:13px;cursor:pointer;white-space:nowrap;}
+
+    .toast{position:fixed;top:16px;left:50%;transform:translateX(-50%);background:var(--text);color:#000;padding:9px 16px;border-radius:999px;font-size:12px;font-weight:700;z-index:100;opacity:0;transition:opacity .25s;pointer-events:none;}
+    .toast.show{opacity:1;}
+  </style>
+</head>
+<body>
+<div id="app-root"><div style="display:flex;align-items:center;justify-content:center;height:100vh;color:#9A9AA2;font-size:14px;">Loading...</div></div>
+
+<script>
+  // ═══════════════════════════════════════════════
+  //  FIREBASE CONFIG — replace with your own values
+  //  (Get these from Firebase Console > Project Settings > Your apps)
+  // ═══════════════════════════════════════════════
+  const firebaseConfig = {
+    apiKey: "AIzaSyAKDhMQK1wgGpzDRV8K6H_v4z60TvrU2i8",
+    authDomain: "livestream-scheduler-543ec.firebaseapp.com",
+    databaseURL: "https://livestream-scheduler-543ec-default-rtdb.asia-southeast1.firebasedatabase.app",
+    projectId: "livestream-scheduler-543ec",
+    storageBucket: "livestream-scheduler-543ec.firebasestorage.app",
+    messagingSenderId: "802783738762",
+    appId: "1:802783738762:web:60d00029896133f0572673"
+  };
+
+  const IS_CONFIGURED = !firebaseConfig.apiKey.includes('PASTE_YOUR');
+
+  if(IS_CONFIGURED){
+    firebase.initializeApp(firebaseConfig);
+  }
+</script>
+
+<script>
+(function(){
+  if(!IS_CONFIGURED){
+    document.getElementById('app-root').innerHTML = setupScreenHtml();
+    return;
+  }
+
+  const db = firebase.database();
+  const REF = db.ref('scheduler');
+
+  let streams=[], merchants=[], brands=[];
+  let selectedDate=todayStr();
+  let editingId=null;
+  let sheetOpen=false;
+  let showMonthly=false;
+  let viewMode='calendar';
+  let calendarMonth=todayStr().slice(0,7);
+  let ignoreUpdate=false;
+  let connected=false;
+
+  // ── helpers ──
+  function todayStr(){const d=new Date();return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());}
+  function pad(n){return String(n).padStart(2,'0');}
+  function uid(){return 's_'+Date.now()+'_'+Math.random().toString(36).slice(2,7);}
+  function escapeHtml(str){const d=document.createElement('div');d.textContent=str||'';return d.innerHTML;}
+  function truncate(s,n){return s.length>n?s.slice(0,n)+'…':s;}
+  function formatLongDate(ds){return new Date(ds+'T00:00:00').toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});}
+  function shiftMonth(ym,delta){let[y,m]=ym.split('-').map(Number);m+=delta;if(m>12){m-=12;y++;}if(m<1){m+=12;y--;}return y+'-'+pad(m);}
+  function showToast(msg){const t=document.getElementById('toast');if(!t)return;t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1800);}
+
+  const root=document.getElementById('app-root');
+
+  function safeRender(){try{render();}catch(e){console.error('Render error:',e);}}
+
+  // ── Firebase sync ──
+  async function persist(){
+    ignoreUpdate=true;
+    try{
+      await REF.set({
+        streams:JSON.stringify(streams),
+        merchants:JSON.stringify(merchants),
+        brands:JSON.stringify(brands)
+      });
+    }catch(e){showToast('Save failed — check connection');}
+    setTimeout(()=>{ignoreUpdate=false;},2000);
+  }
+
+  db.ref('.info/connected').on('value',snap=>{
+    connected=!!snap.val();
+    const dot=document.querySelector('.sync-dot');
+    if(dot){dot.className='sync-dot'+(connected?'':' red');}
+  });
+
+  // Real-time listener — syncs all connected devices instantly
+  REF.on('value',snap=>{
+    if(ignoreUpdate||sheetOpen) return;
+    const data=snap.val()||{};
+    try{
+      const s=data.streams?JSON.parse(data.streams):[];
+      const m=data.merchants?JSON.parse(data.merchants):[];
+      const b=data.brands?JSON.parse(data.brands):[];
+      if(JSON.stringify(s)!==JSON.stringify(streams)||
+         JSON.stringify(m)!==JSON.stringify(merchants)||
+         JSON.stringify(b)!==JSON.stringify(brands)){
+        streams=s;merchants=m;brands=b;
+        safeRender();
+      }
+    }catch(e){console.error('Parse error:',e);}
+  });
+
+  // Initial load
+  REF.once('value',snap=>{
+    const data=snap.val()||{};
+    streams=data.streams?JSON.parse(data.streams):[];
+    merchants=data.merchants?JSON.parse(data.merchants):[];
+    brands=data.brands?JSON.parse(data.brands):[];
+    safeRender();
+  });
+
+  // ── RENDER ──
+  function render(){
+    const nowLive=streams.filter(s=>s.status==='live');
+    const dayEvents=streams.filter(s=>s.date===selectedDate).sort((a,b)=>a.time.localeCompare(b.time));
+    root.innerHTML=`
+      <div class="wrap">
+        <div class="topbar">
+          <div class="brand">
+            <div class="eyebrow">Live Selling</div>
+            <h1 class="display">Schedule</h1>
+          </div>
+          <div class="topbar-right">
+            <button class="icon-top-btn" id="merchantsBtn">🏪 Merchants</button>
+            <button class="icon-top-btn" id="brandsBtn">⭐ Must Do</button>
+            <div class="sync-badge"><span class="sync-dot ${connected?'':'red'}"></span>${connected?'Live':'Offline'}</div>
+          </div>
+        </div>
+
+        <div class="live-banner ${nowLive.length?'show':''}">
+          <div class="live-dot"></div>
+          <div class="txt"><b>${nowLive.length} live now</b> &middot; ${nowLive.map(s=>escapeHtml(s.title)).join(', ')}</div>
+        </div>
+
+        <div class="stats-row">
+          <div class="stat-card tiktok"><div class="num">${countBy('tiktok')}</div><div class="lbl">TikTok Streams</div></div>
+          <div class="stat-card shopee"><div class="num">${countBy('shopee')}</div><div class="lbl">Shopee Streams</div></div>
+        </div>
+
+        <button class="monthly-toggle" id="monthlyToggle">${showMonthly?'▲ Hide':'▼ Show'} monthly breakdown</button>
+        ${showMonthly?`<div class="monthly-panel">${monthlyHtml()}</div>`:''}
+
+        <div class="view-toggle">
+          <button id="vStrip" class="${viewMode==='strip'?'active':''}">≡ Strip</button>
+          <button id="vCal" class="${viewMode==='calendar'?'active':''}">▦ Calendar</button>
+          <button id="vReport" class="${viewMode==='report'?'active':''}">📊 Report</button>
+        </div>
+
+        ${viewMode==='strip'?stripHtml():viewMode==='calendar'?calendarHtml():reportHtml()}
+
+        ${viewMode!=='report'?`
+          <div class="section-label">${formatLongDate(selectedDate)} &middot; ${dayEvents.length} stream${dayEvents.length===1?'':'s'}</div>
+          <div id="cardlist">${dayEvents.length?dayEvents.map(cardHtml).join(''):`<div class="empty"><div class="big">🛍️</div>No streams scheduled this day yet.</div>`}</div>`:''}
+      </div>
+      <button class="fab" id="addBtn">+ Schedule a livestream</button>
+
+      <!-- Stream sheet -->
+      <div class="overlay" id="overlay">
+        <div class="sheet">
+          <div class="sheet-handle"></div>
+          <h2 id="sheetTitle">New livestream</h2>
+          <div class="field"><label>Platform</label>
+            <div class="plat-toggle" id="platToggle">
+              <button type="button" data-plat="tiktok">TikTok</button>
+              <button type="button" data-plat="shopee">Shopee</button>
+            </div>
+          </div>
+          <div class="field"><label>Merchant</label>
+            <select id="f-merchant">
+              <option value="">— No merchant —</option>
+              ${merchants.map(m=>`<option value="${escapeHtml(m)}">${escapeHtml(m)}</option>`).join('')}
+            </select>
+          </div>
+          <div class="field"><label>Title / Product focus</label><input id="f-title" placeholder="e.g. Skincare flash sale"></div>
+          <div class="row2">
+            <div class="field"><label>Date</label><input id="f-date" type="date"></div>
+            <div class="field"><label>Time</label><input id="f-time" type="time"></div>
+          </div>
+          <div class="field"><label>Duration (hrs)</label><input id="f-duration" type="number" min="0.5" step="0.5" placeholder="2"></div>
+          <div class="field"><label>Notes for assistant</label><textarea id="f-notes" placeholder="Promo codes, products to prep, reminders..."></textarea></div>
+          <div class="field"><label>Status</label>
+            <div class="status-toggle" id="statusToggle">
+              <button type="button" data-status="scheduled">Scheduled</button>
+              <button type="button" data-status="live">Live now</button>
+              <button type="button" data-status="done">Done</button>
+              <button type="button" data-status="cancelled">Cancelled</button>
+            </div>
+          </div>
+          <div class="sheet-actions">
+            <button class="btn-ghost" id="cancelBtn">Cancel</button>
+            <button class="btn-primary" id="saveBtn">Save</button>
+          </div>
+          <div class="sheet-actions" id="deleteRow" style="display:none;">
+            <button class="btn-delete" id="deleteBtn">Delete this stream</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Merchants sheet -->
+      <div class="overlay" id="merchantOverlay">
+        <div class="sheet">
+          <div class="sheet-handle"></div>
+          <h2>🏪 Manage Merchants</h2>
+          <div class="list-wrap" id="merchantList">${renderMerchantList()}</div>
+          <div class="add-row">
+            <input id="newMerchantInput" placeholder="Merchant name" maxlength="60">
+            <button id="addMerchantBtn">Add</button>
+          </div>
+          <div class="sheet-actions" style="margin-top:14px;">
+            <button class="btn-ghost" id="closeMerchantBtn" style="flex:1;">Done</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Must Do Brands sheet -->
+      <div class="overlay" id="brandsOverlay">
+        <div class="sheet">
+          <div class="sheet-handle"></div>
+          <h2>⭐ Must Do Brands</h2>
+          <div class="list-wrap" id="brandList">${renderBrandList()}</div>
+          <div class="add-row">
+            <input id="newBrandInput" placeholder="Brand name" maxlength="60">
+            <button id="addBrandBtn">Add</button>
+          </div>
+          <div class="sheet-actions" style="margin-top:14px;">
+            <button class="btn-ghost" id="closeBrandsBtn" style="flex:1;">Done</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="toast" id="toast"></div>`;
+    bindEvents();
+    if(viewMode==='strip') initDragScroll();
+  }
+
+  function renderMerchantList(){
+    return merchants.length?merchants.map((m,i)=>`
+      <div class="list-item"><span>${escapeHtml(m)}</span><button class="del-merchant" data-idx="${i}">×</button></div>`).join('')
+      :'<div class="no-items">No merchants yet. Add one below.</div>';
+  }
+  function renderBrandList(){
+    return brands.length?brands.map((b,i)=>`
+      <div class="list-item"><div class="list-item-left"><span>⭐</span><span>${escapeHtml(b)}</span></div><button class="del-brand" data-idx="${i}">×</button></div>`).join('')
+      :'<div class="no-items">No must-do brands yet. Add one below.</div>';
+  }
+
+  // ── VIEWS ──
+  function stripHtml(){
+    const out=[];const base=new Date();
+    for(let i=-7;i<=30;i++){
+      const d=new Date(base);d.setDate(base.getDate()+i);
+      const ds=d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
+      out.push({date:ds,dow:d.toLocaleDateString('en-US',{weekday:'short'}).slice(0,3),num:d.getDate(),hasEvent:streams.some(s=>s.date===ds)});
+    }
+    return `<div class="daystrip" id="daystrip">${out.map(d=>`
+      <div class="day-chip ${d.date===selectedDate?'active':''} ${d.date===todayStr()?'today':''} ${d.hasEvent?'has-event':''}" data-date="${d.date}">
+        <div class="dow">${d.dow}</div><div class="num">${d.num}</div><div class="dot"></div>
+      </div>`).join('')}</div>`;
+  }
+
+  function calendarHtml(){
+    const[yr,mo]=calendarMonth.split('-').map(Number);
+    const monthName=new Date(yr,mo-1,1).toLocaleDateString('en-US',{month:'long',year:'numeric'});
+    const dayMap={};
+    streams.forEach(s=>{
+      if(s.status==='cancelled'||s.date.slice(0,7)!==calendarMonth) return;
+      const day=parseInt(s.date.slice(8));
+      if(!dayMap[day]) dayMap[day]=[];
+      dayMap[day].push(s);
+    });
+    Object.keys(dayMap).forEach(d=>{dayMap[d].sort((a,b)=>a.time.localeCompare(b.time));});
+    const firstDow=new Date(yr,mo-1,1).getDay();
+    const daysInMonth=new Date(yr,mo,0).getDate();
+    const today=todayStr();
+    const DOWS=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+    let cells='';
+    for(let i=0;i<firstDow;i++) cells+=`<div class="cal-cell other-month"></div>`;
+    for(let d=1;d<=daysInMonth;d++){
+      const ds=`${yr}-${pad(mo)}-${pad(d)}`;
+      const evts=dayMap[d]||[];
+      const MAX=2;
+      let evtHtml=evts.slice(0,MAX).map(s=>{
+        const[h,m]=s.time.split(':');const hr=((+h%12)||12),ap=+h<12?'a':'p';
+        const t=s.title.length>7?s.title.slice(0,6)+'…':s.title;
+        return `<div class="cal-event ${s.platform}">${hr}:${m}${ap} ${escapeHtml(t)}</div>`;
+      }).join('');
+      if(evts.length>MAX) evtHtml+=`<div class="cal-more">+${evts.length-MAX} more</div>`;
+      cells+=`<div class="cal-cell ${ds===today?'today':''} ${ds===selectedDate?'active':''}" data-date="${ds}">
+        <div class="cal-num-wrap"><div class="cal-num">${d}</div></div>${evtHtml}</div>`;
+    }
+    return `<div class="cal-nav">
+        <button class="cal-nav-btn" id="calPrev">‹</button>
+        <div class="cal-nav-title">${monthName}</div>
+        <button class="cal-nav-btn" id="calNext">›</button>
+      </div>
+      <div class="cal-grid">${DOWS.map(d=>`<div class="cal-dow">${d}</div>`).join('')}${cells}</div>`;
+  }
+
+  function reportHtml(){
+    const active=streams.filter(s=>s.status!=='cancelled');
+    if(!active.length) return `<div class="report-empty">No streams yet to report on.</div>`;
+    const byMonth={};
+    active.forEach(s=>{
+      const mo=s.date.slice(0,7);
+      if(!byMonth[mo]) byMonth[mo]={tiktok:[],shopee:[]};
+      byMonth[mo][s.platform].push(s);
+    });
+    return Object.keys(byMonth).sort().reverse().map(mo=>{
+      const label=new Date(mo+'-01T00:00:00').toLocaleDateString('en-US',{month:'long',year:'numeric'});
+      const tk=byMonth[mo].tiktok.sort((a,b)=>a.date.localeCompare(b.date)||a.time.localeCompare(b.time));
+      const sh=byMonth[mo].shopee.sort((a,b)=>a.date.localeCompare(b.date)||a.time.localeCompare(b.time));
+      const total=tk.length+sh.length;
+      function rows(list){
+        if(!list.length) return `<div style="font-size:12px;color:var(--text-dim);padding:6px 0 4px;">No streams this month</div>`;
+        return list.map(s=>{
+          const d=new Date(s.date+'T00:00:00');
+          const dl=d.toLocaleDateString('en-US',{day:'numeric',month:'short'});
+          const[h,m]=s.time.split(':');const hr=((+h%12)||12),ampm=+h<12?'AM':'PM';
+          return `<div class="report-stream-item">
+            <div class="report-stream-left">
+              <div class="report-stream-name">${escapeHtml(s.title)}</div>
+              ${s.merchant?`<div class="report-stream-meta">🏪 ${escapeHtml(s.merchant)}</div>`:''}
+            </div>
+            <div class="report-stream-date">${dl} ${hr}:${m}${ampm}</div>
+          </div>`;
+        }).join('');
+      }
+      return `<div class="report-month">
+        <div class="report-month-header"><div class="report-month-title">${label}</div><div class="report-month-total">${total} stream${total===1?'':'s'}</div></div>
+        <div class="report-platform"><div class="report-plat-header"><span class="plat-badge tiktok">TikTok</span><div class="report-plat-count">${tk.length} stream${tk.length===1?'':'s'}</div></div><div class="report-streams">${rows(tk)}</div></div>
+        <div class="report-platform"><div class="report-plat-header"><span class="plat-badge shopee">Shopee</span><div class="report-plat-count">${sh.length} stream${sh.length===1?'':'s'}</div></div><div class="report-streams">${rows(sh)}</div></div>
+      </div>`;
+    }).join('');
+  }
+
+  function cardHtml(s){
+    const[h,m]=s.time.split(':');const hr=((+h%12)||12),ampm=+h<12?'AM':'PM';
+    const sl={scheduled:'Scheduled',live:'● Live',done:'Done',cancelled:'Cancelled'};
+    return `<div class="card platform-${s.platform} ${s.status==='cancelled'?'is-cancelled':''}" data-id="${s.id}">
+      <div class="time-col"><div class="t">${hr}:${m}</div><div class="ampm">${ampm}</div></div>
+      <div class="card-body">
+        <div class="card-top">
+          <span class="plat-badge ${s.platform}">${s.platform==='tiktok'?'TikTok':'Shopee'}</span>
+          ${s.merchant?`<span class="merchant-badge">🏪 ${escapeHtml(s.merchant)}</span>`:''}
+          <span class="status-pill status-${s.status}">${sl[s.status]||s.status}</span>
+        </div>
+        <p class="card-title">${escapeHtml(s.title)}</p>
+        <div class="card-meta">${s.duration?s.duration+'h':''}${s.notes?' &middot; '+escapeHtml(truncate(s.notes,40)):''}</div>
+      </div>
+      <div class="card-actions"><button class="icon-btn edit-btn" data-id="${s.id}">✎</button></div>
+    </div>`;
+  }
+
+  function countBy(p){return streams.filter(s=>s.platform===p&&s.status!=='cancelled').length;}
+
+  function monthlyHtml(){
+    const byMonth={};
+    streams.forEach(s=>{
+      if(s.status==='cancelled') return;
+      const mo=s.date.slice(0,7);
+      if(!byMonth[mo]) byMonth[mo]={tiktok:0,shopee:0};
+      byMonth[mo][s.platform]++;
+    });
+    const months=Object.keys(byMonth).sort().reverse();
+    if(!months.length) return `<div class="empty" style="padding:20px 10px;">No streams scheduled yet.</div>`;
+    return months.map(mo=>{
+      const label=new Date(mo+'-01T00:00:00').toLocaleDateString('en-US',{month:'long',year:'numeric'});
+      const c=byMonth[mo];
+      return `<div class="month-row"><div class="month-label">${label}</div>
+        <div class="month-counts"><span class="mc-pill tiktok">${c.tiktok} TikTok</span><span class="mc-pill shopee">${c.shopee} Shopee</span><span class="mc-total">${c.tiktok+c.shopee} total</span></div></div>`;
+    }).join('');
+  }
+
+  function initDragScroll(){
+    const el=document.getElementById('daystrip');if(!el) return;
+    let isDown=false,startX=0,scrollLeft=0;
+    el.addEventListener('mousedown',e=>{isDown=true;el.classList.add('dragging');startX=e.pageX-el.offsetLeft;scrollLeft=el.scrollLeft;});
+    el.addEventListener('mouseleave',()=>{isDown=false;el.classList.remove('dragging');});
+    el.addEventListener('mouseup',()=>{isDown=false;el.classList.remove('dragging');});
+    el.addEventListener('mousemove',e=>{if(!isDown) return;e.preventDefault();el.scrollLeft=scrollLeft-(e.pageX-el.offsetLeft-startX);});
+    const active=el.querySelector('.day-chip.active');
+    if(active) active.scrollIntoView({inline:'center',block:'nearest',behavior:'smooth'});
+  }
+
+  // ── BIND EVENTS ──
+  function bindEvents(){
+    const mb=document.getElementById('monthlyToggle');if(mb) mb.onclick=()=>{showMonthly=!showMonthly;render();};
+    document.getElementById('vStrip').onclick=()=>{viewMode='strip';render();};
+    document.getElementById('vCal').onclick=()=>{viewMode='calendar';render();};
+    document.getElementById('vReport').onclick=()=>{viewMode='report';render();};
+    if(viewMode==='strip'){
+      document.querySelectorAll('.day-chip').forEach(c=>{c.onclick=()=>{selectedDate=c.dataset.date;render();};});
+    } else if(viewMode==='calendar'){
+      const cp=document.getElementById('calPrev'),cn=document.getElementById('calNext');
+      if(cp) cp.onclick=()=>{calendarMonth=shiftMonth(calendarMonth,-1);render();};
+      if(cn) cn.onclick=()=>{calendarMonth=shiftMonth(calendarMonth,1);render();};
+      document.querySelectorAll('.cal-cell:not(.other-month)').forEach(c=>{c.onclick=()=>{selectedDate=c.dataset.date;render();};});
+    }
+    document.querySelectorAll('.edit-btn').forEach(b=>{b.onclick=()=>openSheet(b.dataset.id);});
+    document.getElementById('addBtn').onclick=()=>openSheet(null);
+    document.getElementById('cancelBtn').onclick=closeSheet;
+    document.getElementById('overlay').onclick=e=>{if(e.target.id==='overlay') closeSheet();};
+    document.getElementById('saveBtn').onclick=saveStream;
+    document.getElementById('deleteBtn').onclick=deleteStream;
+    document.getElementById('merchantsBtn').onclick=()=>{sheetOpen=true;document.getElementById('merchantOverlay').classList.add('show');setTimeout(()=>document.getElementById('newMerchantInput').focus(),100);};
+    document.getElementById('closeMerchantBtn').onclick=()=>{document.getElementById('merchantOverlay').classList.remove('show');sheetOpen=false;};
+    document.getElementById('merchantOverlay').onclick=e=>{if(e.target.id==='merchantOverlay'){document.getElementById('merchantOverlay').classList.remove('show');sheetOpen=false;}};
+    document.getElementById('addMerchantBtn').onclick=addMerchant;
+    document.getElementById('newMerchantInput').onkeydown=e=>{if(e.key==='Enter') addMerchant();};
+    document.querySelectorAll('.del-merchant').forEach(b=>{b.onclick=()=>removeMerchant(+b.dataset.idx);});
+    document.getElementById('brandsBtn').onclick=()=>{sheetOpen=true;document.getElementById('brandsOverlay').classList.add('show');setTimeout(()=>document.getElementById('newBrandInput').focus(),100);};
+    document.getElementById('closeBrandsBtn').onclick=()=>{document.getElementById('brandsOverlay').classList.remove('show');sheetOpen=false;};
+    document.getElementById('brandsOverlay').onclick=e=>{if(e.target.id==='brandsOverlay'){document.getElementById('brandsOverlay').classList.remove('show');sheetOpen=false;}};
+    document.getElementById('addBrandBtn').onclick=addBrand;
+    document.getElementById('newBrandInput').onkeydown=e=>{if(e.key==='Enter') addBrand();};
+    document.querySelectorAll('.del-brand').forEach(b=>{b.onclick=()=>removeBrand(+b.dataset.idx);});
+    document.querySelectorAll('#platToggle button').forEach(b=>{
+      b.onclick=()=>{document.querySelectorAll('#platToggle button').forEach(x=>{x.className='';delete x.dataset.selected;});b.className='sel-'+b.dataset.plat;b.dataset.selected='true';};
+    });
+    document.querySelectorAll('#statusToggle button').forEach(b=>{
+      b.onclick=()=>{document.querySelectorAll('#statusToggle button').forEach(x=>{x.classList.remove('sel');delete x.dataset.selected;});b.classList.add('sel');b.dataset.selected='true';};
+    });
+  }
+
+  // ── STREAM SHEET ──
+  function openSheet(id){
+    sheetOpen=true;editingId=id;
+    const s=id?streams.find(x=>x.id===id):null;
+    document.getElementById('sheetTitle').textContent=id?'Edit livestream':'New livestream';
+    document.getElementById('f-title').value=s?s.title:'';
+    document.getElementById('f-date').value=s?s.date:selectedDate;
+    document.getElementById('f-time').value=s?s.time:'19:00';
+    document.getElementById('f-duration').value=s?s.duration:2;
+    document.getElementById('f-notes').value=s?(s.notes||''):'';
+    const sel=document.getElementById('f-merchant');
+    sel.innerHTML=`<option value="">— No merchant —</option>`+merchants.map(m=>`<option value="${escapeHtml(m)}">${escapeHtml(m)}</option>`).join('');
+    sel.value=s?(s.merchant||''):'';
+    const plat=s?s.platform:'tiktok';
+    document.querySelectorAll('#platToggle button').forEach(b=>{b.className=b.dataset.plat===plat?'sel-'+plat:'';if(b.dataset.plat===plat) b.dataset.selected='true'; else delete b.dataset.selected;});
+    const status=s?s.status:'scheduled';
+    document.querySelectorAll('#statusToggle button').forEach(b=>{b.classList.toggle('sel',b.dataset.status===status);if(b.dataset.status===status) b.dataset.selected='true'; else delete b.dataset.selected;});
+    document.getElementById('deleteRow').style.display=id?'block':'none';
+    document.getElementById('overlay').classList.add('show');
+  }
+  function closeSheet(){document.getElementById('overlay').classList.remove('show');editingId=null;sheetOpen=false;}
+  async function saveStream(){
+    const title=document.getElementById('f-title').value.trim();
+    const date=document.getElementById('f-date').value;
+    const time=document.getElementById('f-time').value;
+    if(!title||!date||!time){showToast('Fill in title, date and time');return;}
+    const duration=parseFloat(document.getElementById('f-duration').value)||null;
+    const notes=document.getElementById('f-notes').value.trim();
+    const merchant=document.getElementById('f-merchant').value||'';
+    const platBtn=document.querySelector('#platToggle button[data-selected="true"]');
+    const statusBtn=document.querySelector('#statusToggle button[data-selected="true"]');
+    const platform=platBtn?platBtn.dataset.plat:'tiktok';
+    const status=statusBtn?statusBtn.dataset.status:'scheduled';
+    if(editingId){const idx=streams.findIndex(s=>s.id===editingId);if(idx>-1) streams[idx]={...streams[idx],title,date,time,duration,notes,platform,status,merchant};}
+    else{streams.push({id:uid(),title,date,time,duration,notes,platform,status,merchant});}
+    selectedDate=date;calendarMonth=date.slice(0,7);
+    await persist();closeSheet();safeRender();showToast('Saved');
+  }
+  async function deleteStream(){streams=streams.filter(s=>s.id!==editingId);await persist();closeSheet();safeRender();showToast('Deleted');}
+
+  // ── MERCHANT ──
+  function refreshList(containerId,renderFn,delClass,delFn){
+    document.getElementById(containerId).innerHTML=renderFn();
+    document.querySelectorAll('.'+delClass).forEach(b=>{b.onclick=()=>delFn(+b.dataset.idx);});
+  }
+  async function addMerchant(){
+    const input=document.getElementById('newMerchantInput');const name=input.value.trim();
+    if(!name){showToast('Enter a merchant name');return;}
+    if(merchants.includes(name)){showToast('Already exists');return;}
+    merchants.push(name);input.value='';await persist();
+    refreshList('merchantList',renderMerchantList,'del-merchant',removeMerchant);showToast('Added');
+  }
+  async function removeMerchant(idx){merchants.splice(idx,1);await persist();refreshList('merchantList',renderMerchantList,'del-merchant',removeMerchant);showToast('Removed');}
+
+  // ── BRANDS ──
+  async function addBrand(){
+    const input=document.getElementById('newBrandInput');const name=input.value.trim();
+    if(!name){showToast('Enter a brand name');return;}
+    if(brands.includes(name)){showToast('Already exists');return;}
+    brands.push(name);input.value='';await persist();
+    refreshList('brandList',renderBrandList,'del-brand',removeBrand);showToast('Added');
+  }
+  async function removeBrand(idx){brands.splice(idx,1);await persist();refreshList('brandList',renderBrandList,'del-brand',removeBrand);showToast('Removed');}
+
+})();
+
+function setupScreenHtml(){
+  return `<div class="setup-screen">
+    <h1 class="display">Livestream Scheduler</h1>
+    <p class="sub">Firebase not configured yet — follow these steps to activate your scheduler.</p>
+    <div class="setup-step"><div class="step-num">1</div><div class="step-body">
+      <h3>Create a Firebase project</h3>
+      <p>Go to <a href="https://console.firebase.google.com" target="_blank">console.firebase.google.com</a>, click <b>Add project</b>, give it a name, and create it.</p>
+    </div></div>
+    <div class="setup-step"><div class="step-num">2</div><div class="step-body">
+      <h3>Add a Web app & copy the config</h3>
+      <p>In your project, click the <b>&lt;/&gt;</b> web icon → Register app → copy the <code>firebaseConfig</code> object shown.</p>
+    </div></div>
+    <div class="setup-step"><div class="step-num">3</div><div class="step-body">
+      <h3>Enable Realtime Database</h3>
+      <p>In the sidebar: <b>Build → Realtime Database → Create database</b> → pick a region → <b>Start in test mode</b> → Enable.</p>
+    </div></div>
+    <div class="setup-step"><div class="step-num">4</div><div class="step-body">
+      <h3>Set database rules</h3>
+      <p>In Realtime Database → <b>Rules</b> tab, replace everything with:<br>
+      <code>{ "rules": { ".read": true, ".write": true } }</code><br>then click <b>Publish</b>.</p>
+    </div></div>
+    <div class="setup-step"><div class="step-num">5</div><div class="step-body">
+      <h3>Paste config into this file</h3>
+      <p>Open <code>index.html</code> in a text editor, find the <b>FIREBASE CONFIG</b> section near the top, and replace the placeholder values with your copied config.</p>
+    </div></div>
+    <div class="setup-step"><div class="step-num">6</div><div class="step-body">
+      <h3>Host on GitHub Pages or Netlify</h3>
+      <p>Upload the file as <code>index.html</code> to GitHub Pages or drag it to <a href="https://app.netlify.com/drop" target="_blank">Netlify Drop</a>. Done!</p>
+    </div></div>
+  </div>`;
+}
+</script>
+</body>
+</html>
